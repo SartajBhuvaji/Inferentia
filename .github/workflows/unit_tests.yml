@@ -18,5 +18,11 @@ jobs:
         with:
           python-version-file: ".python-version"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Run tests
-        run: pytest
+        run: |
+          uv venv
+          uv pip install pytest
+          uv run pytest
