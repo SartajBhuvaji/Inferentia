@@ -1,0 +1,114 @@
+name: Version Bump
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Skip fork PRs (no push permission)
+        if: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          echo "PR comes from a fork. Skipping version bump because push is not allowed."
+
+      - name: Checkout PR head branch
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Compute and apply version bump
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        id: bump
+        env:
+          PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          target_labels = ("major", "minor", "patch")
+          labels = json.loads(os.environ["PR_LABELS_JSON"])
+          selected = [label for label in target_labels if label in labels]
+
+          if len(selected) == 0:
+              print("No major/minor/patch label found. Nothing to do.")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("changed=false\n")
+              sys.exit(0)
+
+          if len(selected) > 1:
+              print(
+                  f"Expected exactly one of {target_labels}, found: {selected}.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          bump_type = selected[0]
+          pyproject_path = Path("pyproject.toml")
+          content = pyproject_path.read_text(encoding="utf-8")
+          version_match = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"\s*$', content, re.MULTILINE)
+
+          if not version_match:
+              print('Could not find `version = "X.Y.Z"` in pyproject.toml.', file=sys.stderr)
+              sys.exit(1)
+
+          major, minor, patch = map(int, version_match.groups())
+          old_version = f"{major}.{minor}.{patch}"
+
+          if bump_type == "major":
+              major, minor, patch = major + 1, 0, 0
+          elif bump_type == "minor":
+              minor, patch = minor + 1, 0
+          else:
+              patch += 1
+
+          new_version = f"{major}.{minor}.{patch}"
+
+          if new_version == old_version:
+              print("Version unchanged. Nothing to commit.")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("changed=false\n")
+              sys.exit(0)
+
+          new_content = re.sub(
+              r'^version\s*=\s*"\d+\.\d+\.\d+"\s*$',
+              f'version = "{new_version}"',
+              content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pyproject_path.write_text(new_content, encoding="utf-8")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("changed=true\n")
+              output.write(f"old_version={old_version}\n")
+              output.write(f"new_version={new_version}\n")
+              output.write(f"bump_type={bump_type}\n")
+
+          print(f"Bumped version: {old_version} -> {new_version} ({bump_type})")
+          PY
+
+      - name: Commit and push version update
+        if: ${{ !github.event.pull_request.head.repo.fork && steps.bump.outputs.changed == 'true' }}
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore: bump version from PR label (${{ steps.bump.outputs.bump_type }})"
+          git push origin "HEAD:${BRANCH_NAME}"
