@@ -9,4 +9,5 @@ dependencies = [
     "pytest>=9.0.3",
     "torch>=2.11.0",
     "transformers>=5.5.4",
+    "vllm>=0.2.5",
 ]
