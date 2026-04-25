@@ -11,3 +11,25 @@ dependencies = [
     "transformers>=5.5.4",
     "vllm>=0.2.5",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # line too long 
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

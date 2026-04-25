@@ -2,7 +2,7 @@ name: Version Bump
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
+    types: [closed]
     branches: [main]
 
 permissions:
@@ -11,24 +11,18 @@ permissions:
 
 jobs:
   version-bump:
+    if: ${{ github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Skip fork PRs (no push permission)
-        if: ${{ github.event.pull_request.head.repo.fork }}
-        run: |
-          echo "PR comes from a fork. Skipping version bump because push is not allowed."
-
-      - name: Checkout PR head branch
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: main
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute and apply version bump
-        if: ${{ !github.event.pull_request.head.repo.fork }}
         id: bump
         env:
           PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
@@ -103,12 +97,10 @@ jobs:
           PY
 
       - name: Commit and push version update
-        if: ${{ !github.event.pull_request.head.repo.fork && steps.bump.outputs.changed == 'true' }}
-        env:
-          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        if: ${{ steps.bump.outputs.changed == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml
           git commit -m "chore: bump version from PR label (${{ steps.bump.outputs.bump_type }})"
-          git push origin "HEAD:${BRANCH_NAME}"
+          git push origin HEAD:main
